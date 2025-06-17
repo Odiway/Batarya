@@ -3,19 +3,17 @@
 
 import React, { useState, useRef } from 'react';
 import { Upload, FileText, MessageSquare, Search, CheckCircle, Clock, Wrench } from 'lucide-react';
-import dynamic from 'next/dynamic'; // <-- next/dynamic import edildi
+// next/dynamic hala kullanılacak, XLSX için.
 
-// pdfjs-dist ve xlsx kütüphanelerini DİNAMİK OLARAK import ediyoruz
-// Bu, onların sadece client tarafında yüklenmesini ve çalışmasını sağlar (SSR'ı atlar).
-const pdfjsLibPromise = import('pdfjs-dist'); // Promise olarak import edin
+// PDF.js ile ilgili importlar ve ayarlar KALDIRILDI.
+// import * as pdfjsLib from 'pdfjs-dist';
+// pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+
+// XLSX kütüphanesini DİNAMİK OLARAK import ediyoruz
+// Bu, onun sadece client tarafında yüklenmesini ve çalışmasını sağlar (SSR'ı atlar).
 const XLSXPromise = import('xlsx'); // Promise olarak import edin
 
-// PDF.js worker'ının yolunu burada belirtmek sorunlu olabilir,
-// çünkü bu satır modül seviyesinde çalışır.
-// Bu ayarı, pdfjsLib yüklendikten SONRA client tarafında yapmalıyız.
-// pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`; // Bu satırı yorum satırı yaptık
-
-// Type definitions (Aynı kalıyor)
+// Type definitions
 interface FileContent {
   [fileName: string]: string;
 }
@@ -37,14 +35,6 @@ const MaintenanceDocumentAnalyzer = () => {
   const [activeTab, setActiveTab] = useState<'upload' | 'analyze'>('upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // useEffect içinde pdfjsLib'i ve worker'ı ayarlayın
-  React.useEffect(() => {
-    // pdfjsLibPromise yüklendikten sonra worker'ı ayarla
-    pdfjsLibPromise.then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-    });
-  }, []); // Sadece bir kere çalışsın
-
   // handleFileUpload: Dosyaların metnini TARAYICIDA çıkarır ve sunucuya JSON olarak gönderir.
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const files = Array.from(event.target.files || []);
@@ -55,36 +45,17 @@ const MaintenanceDocumentAnalyzer = () => {
 
     const extractedTexts: { [fileName: string]: string } = {};
 
-    // Dinamik import edilen kütüphaneleri fonksiyon içinde bekle
-    const [pdfjs, XLSX_lib] = await Promise.all([pdfjsLibPromise, XLSXPromise]);
+    // Dinamik import edilen XLSX kütüphanesini bekliyoruz
+    const XLSX_lib = await XLSXPromise;
 
     // Her dosyayı tarayıcıda döngüye alıp metnini çıkarıyoruz.
     for (const file of files) {
       try {
         let text = '';
 
-        // PDF dosyalarını işleme
-        if (file.type === 'application/pdf') {
-          const arrayBuffer = await file.arrayBuffer();
-          const pdf = await pdfjs.getDocument(arrayBuffer).promise; // pdfjs'i kullan
-          for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            // PDF.js'nin TextContent objesinin tipi (any yerine daha spesifik olmalı)
-            // Daha önceki discussion'da bu interface'i tanımlamıştık.
-            // Eğer types.ts içinde değilse buraya ekleyin:
-            interface PDFTextItem {
-              str: string;
-            }
-            interface PDFTextContent {
-              items: PDFTextItem[];
-            }
-
-            const textContent: PDFTextContent = await page.getTextContent();
-            text += textContent.items.map((item: PDFTextItem) => item.str).join(' ');
-          }
-        }
-        // Excel ve CSV dosyalarını işleme
-        else if (
+        // PDF dosyalarını işleme kısmı KALDIRILDI
+        // Sadece Excel ve CSV dosyalarını işleme
+        if (
           file.type.includes('spreadsheet') ||
           file.type.includes('excel') ||
           file.name.endsWith('.xlsx') ||
@@ -92,18 +63,26 @@ const MaintenanceDocumentAnalyzer = () => {
           file.type === 'text/csv'
         ) {
           const arrayBuffer = await file.arrayBuffer();
-          const workbook = XLSX_lib.read(arrayBuffer, { type: 'buffer' }); // XLSX_lib'i kullan
+          const workbook = XLSX_lib.read(arrayBuffer, { type: 'buffer' }); // XLSX_lib kullanıldı
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          text = XLSX_lib.utils.sheet_to_csv(worksheet); // XLSX_lib'i kullan
+          text = XLSX_lib.utils.sheet_to_csv(worksheet); // XLSX_lib kullanıldı
         } else {
           console.warn(`Desteklenmeyen dosya türü atlandı: ${file.name}`);
           continue;
         }
         extractedTexts[file.name] = text;
-      } catch (error) {
+      } catch (error: unknown) {
+        // 'error' değişkeni 'any' yerine 'unknown' olarak tip edildi
         console.error(`${file.name} işlenirken hata oluştu:`, error);
-        alert(`${file.name} dosyası okunamadı. Lütfen dosyanın bozuk olmadığını kontrol edin.`);
+        if (error instanceof Error) {
+          // Hata tip daraltma (type narrowing)
+          alert(
+            `${file.name} dosyası okunamadı. Lütfen dosyanın bozuk olmadığını kontrol edin. Hata: ${error.message}`,
+          );
+        } else {
+          alert(`${file.name} dosyası okunamadı. Lütfen dosyanın bozuk olmadığını kontrol edin.`);
+        }
       }
     }
 
@@ -132,9 +111,14 @@ const MaintenanceDocumentAnalyzer = () => {
         ...prev,
         ...Object.fromEntries(Object.keys(extractedTexts).map((key) => [key, 'processed'])),
       }));
-    } catch (error) {
+    } catch (error: unknown) {
+      // 'error' değişkeni 'any' yerine 'unknown' olarak tip edildi
       console.error('Metinler sunucuya gönderilirken hata:', error);
-      alert('Dosyalar sunucuya gönderilirken bir hata oluştu:');
+      if (error instanceof Error) {
+        alert(`Dosyalar sunucuya gönderilirken bir hata oluştu: ${error.message}`);
+      } else {
+        alert('Dosyalar sunucuya gönderilirken bir hata oluştu.');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -182,7 +166,8 @@ const MaintenanceDocumentAnalyzer = () => {
         timestamp: new Date().toLocaleTimeString(),
       };
       setConversation((prev) => [...prev, aiResponse]);
-    } catch (error) {
+    } catch (error: unknown) {
+      // 'error' değişkeni 'any' yerine 'unknown' olarak tip edildi
       console.error('Soru sorma hatası:', error);
       const errorMessage: ConversationMessage = {
         type: 'ai',
@@ -257,9 +242,9 @@ const MaintenanceDocumentAnalyzer = () => {
                 Upload Maintenance Documents
               </h3>
               <p className="text-gray-600 mb-4">
-                Drop PDF files (manuals, repair logs) or Excel/CSV files (technical specifications)
-                here
-              </p>
+                Drop Excel/CSV files (technical specifications) here
+              </p>{' '}
+              {/* PDF kaldırıldı */}
               <button className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
                 Choose Files
               </button>
@@ -267,7 +252,7 @@ const MaintenanceDocumentAnalyzer = () => {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.xlsx,.xls,.csv"
+                accept=".xlsx,.xls,.csv" // PDF kaldırıldı
                 onChange={handleFileUpload}
                 className="hidden"
               />
