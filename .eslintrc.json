@@ -1,0 +1,58 @@
+{
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2020": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended",
+    "next/core-web-vitals", // Next.js için varsayılan ve önerilen yapılandırma
+    "prettier" // Prettier ile çakışan ESLint stil kurallarını devre dışı bırakır
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "plugins": [
+    "react",
+    "@typescript-eslint",
+    "prettier",
+    "react-hooks"
+  ],
+  "rules": {
+    // Genel kurallar
+    "no-unused-vars": "off", // TypeScript'in kendi unused-vars'ını kullanacağız
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }], // Kullanılmayan değişkenler için uyarı ver
+    "no-console": ["warn", { "allow": ["warn", "error"] }], // console.log'a uyarı ver, console.warn/error'a izin ver
+    "react/react-in-jsx-scope": "off", // Next.js ile gerekli değil
+    "react/prop-types": "off", // TypeScript ile gerekli değil
+    "prettier/prettier": ["error", { "endOfLine": "lf" }], // Prettier kurallarını ESLint hatası olarak çalıştır
+
+    // React Hooks kuralları
+    "react-hooks/rules-of-hooks": "error", // Hook kurallarına uyulmasını sağla
+    "react-hooks/exhaustive-deps": "warn", // useEffect bağımlılıklarını kontrol et
+
+    // TypeScript özel kuralları
+    "@typescript-eslint/explicit-module-boundary-types": "off", // Fonksiyon dönüş tiplerini zorunlu kılma (isteğe bağlı)
+    "@typescript-eslint/no-explicit-any": "warn" // 'any' kullanımına uyarı ver (strictness'ı artırmak için 'error' yapabilirsiniz)
+  },
+  "settings": {
+    "react": {
+      "version": "detect" // React sürümünü otomatik algıla
+    }
+  },
+  "ignorePatterns": [ // ESLint'in görmezden geleceği dosyalar/klasörler
+    "node_modules/",
+    ".next/",
+    "build/",
+    "out/",
+    "dist/"
+  ]
+}

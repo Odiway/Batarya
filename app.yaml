@@ -1,0 +1,33 @@
+# app.yaml
+runtime: nodejs20 # Bunu şimdilik nodejs20 olarak bırakın
+env: standard
+instance_class: F1
+service: default
+
+env_variables:
+  # Bu değerlerin doğru olduğundan emin olun!
+  # Google API Key'i kullanmıyorsanız bu satırı kaldırabilirsiniz.
+  GOOGLE_API_KEY: "AIzaSyC6T9ppkosrtQjJ4gQmqExGZ4QtKi1N-8g"
+  MONGODB_URI: "mongodb+srv://asd:[YOUR_NEW_STRONG_MONGODB_PASSWORD]@batarya.mxxna2n.mongodb.net/?retryWrites=true&w=majority&appName=Batarya" # Şifreyi güncellediğinizden emin olun!
+  MONGODB_DB_NAME: "batarya_db" # Sonundaki 'g' harfini kaldırdığınızdan emin olun!
+
+handlers:
+- url: /_next/static/(.*)
+  static_files: .next/static/\1
+  upload: .next/static/.*
+  secure: always
+
+- url: /(.*\.(gif|png|jpg|ico|webp|css|js|woff|woff2|ttf|eot|svg|html))$
+  static_files: public/\1
+  upload: public/.*
+  secure: always
+
+- url: /.*
+  script: auto
+  secure: always
+
+entrypoint: npm run start
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 1
