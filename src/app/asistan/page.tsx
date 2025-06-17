@@ -1,14 +1,19 @@
+// src/app/asistan/page.tsx
 'use client';
 
 import React, { useState, useRef } from 'react';
 import { Upload, FileText, MessageSquare, Search, CheckCircle, Clock, Wrench } from 'lucide-react';
+import dynamic from 'next/dynamic'; // <-- next/dynamic import edildi
 
-// GEREKLİ KÜTÜPHANELERİ IMPORT EDİYORUZ
-import * as pdfjsLib from 'pdfjs-dist';
-import * as XLSX from 'xlsx';
+// pdfjs-dist ve xlsx kütüphanelerini DİNAMİK OLARAK import ediyoruz
+// Bu, onların sadece client tarafında yüklenmesini ve çalışmasını sağlar (SSR'ı atlar).
+const pdfjsLibPromise = import('pdfjs-dist'); // Promise olarak import edin
+const XLSXPromise = import('xlsx'); // Promise olarak import edin
 
-// PDF.js worker'ının yolunu belirtiyoruz. Bu satır, kütüphanenin doğru çalışması için gereklidir.
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+// PDF.js worker'ının yolunu burada belirtmek sorunlu olabilir,
+// çünkü bu satır modül seviyesinde çalışır.
+// Bu ayarı, pdfjsLib yüklendikten SONRA client tarafında yapmalıyız.
+// pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`; // Bu satırı yorum satırı yaptık
 
 // Type definitions (Aynı kalıyor)
 interface FileContent {
@@ -24,7 +29,6 @@ interface ConversationMessage {
 
 const MaintenanceDocumentAnalyzer = () => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  // extractedContent state'ini, dosyanın işlenip işlenmediğini takip etmek için kullanmaya devam edebiliriz.
   const [extractedContent, setExtractedContent] = useState<FileContent>({});
   const [currentQuestion, setCurrentQuestion] = useState<string>('');
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
@@ -32,6 +36,14 @@ const MaintenanceDocumentAnalyzer = () => {
   const [isAnswering, setIsAnswering] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'analyze'>('upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // useEffect içinde pdfjsLib'i ve worker'ı ayarlayın
+  React.useEffect(() => {
+    // pdfjsLibPromise yüklendikten sonra worker'ı ayarla
+    pdfjsLibPromise.then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+    });
+  }, []); // Sadece bir kere çalışsın
 
   // handleFileUpload: Dosyaların metnini TARAYICIDA çıkarır ve sunucuya JSON olarak gönderir.
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
@@ -43,13 +55,36 @@ const MaintenanceDocumentAnalyzer = () => {
 
     const extractedTexts: { [fileName: string]: string } = {};
 
+    // Dinamik import edilen kütüphaneleri fonksiyon içinde bekle
+    const [pdfjs, XLSX_lib] = await Promise.all([pdfjsLibPromise, XLSXPromise]);
+
     // Her dosyayı tarayıcıda döngüye alıp metnini çıkarıyoruz.
     for (const file of files) {
       try {
         let text = '';
 
+        // PDF dosyalarını işleme
+        if (file.type === 'application/pdf') {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await pdfjs.getDocument(arrayBuffer).promise; // pdfjs'i kullan
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            // PDF.js'nin TextContent objesinin tipi (any yerine daha spesifik olmalı)
+            // Daha önceki discussion'da bu interface'i tanımlamıştık.
+            // Eğer types.ts içinde değilse buraya ekleyin:
+            interface PDFTextItem {
+              str: string;
+            }
+            interface PDFTextContent {
+              items: PDFTextItem[];
+            }
+
+            const textContent: PDFTextContent = await page.getTextContent();
+            text += textContent.items.map((item: PDFTextItem) => item.str).join(' ');
+          }
+        }
         // Excel ve CSV dosyalarını işleme
-        if (
+        else if (
           file.type.includes('spreadsheet') ||
           file.type.includes('excel') ||
           file.name.endsWith('.xlsx') ||
@@ -57,10 +92,10 @@ const MaintenanceDocumentAnalyzer = () => {
           file.type === 'text/csv'
         ) {
           const arrayBuffer = await file.arrayBuffer();
-          const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
+          const workbook = XLSX_lib.read(arrayBuffer, { type: 'buffer' }); // XLSX_lib'i kullan
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          text = XLSX.utils.sheet_to_csv(worksheet);
+          text = XLSX_lib.utils.sheet_to_csv(worksheet); // XLSX_lib'i kullan
         } else {
           console.warn(`Desteklenmeyen dosya türü atlandı: ${file.name}`);
           continue;
@@ -78,7 +113,6 @@ const MaintenanceDocumentAnalyzer = () => {
       return;
     }
 
-    // DEĞİŞİKLİK: Sunucuya FormData yerine, metinleri içeren JSON gönderiyoruz.
     try {
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -94,7 +128,6 @@ const MaintenanceDocumentAnalyzer = () => {
       const data = await response.json();
       alert(data.message);
 
-      // Başarıyla işlenen dosyalar için durumu güncelleyelim (yeşil checkmark için)
       setExtractedContent((prev) => ({
         ...prev,
         ...Object.fromEntries(Object.keys(extractedTexts).map((key) => [key, 'processed'])),
@@ -111,7 +144,6 @@ const MaintenanceDocumentAnalyzer = () => {
   const handleQuestionSubmit = async (): Promise<void> => {
     if (!currentQuestion.trim()) return;
 
-    // DEĞİŞİKLİK: Kontrolü, kullanıcının gördüğü 'uploadedFiles' listesine göre yapıyoruz.
     if (uploadedFiles.length === 0) {
       alert('Lütfen önce analiz için bir belge yükleyin.');
       return;
@@ -130,7 +162,6 @@ const MaintenanceDocumentAnalyzer = () => {
       const response = await fetch('/api/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // DEĞİŞİKLİK: Artık 'extracted_content' göndermiyoruz. Sunucu bunu veritabanından bulacak.
         body: JSON.stringify({
           question: userMessage.content,
         }),
@@ -163,9 +194,6 @@ const MaintenanceDocumentAnalyzer = () => {
       setIsAnswering(false);
     }
   };
-
-  // getFileIcon fonksiyonu ve return içindeki JSX yapısı aynı kalıyor.
-  // ... (Hiçbir değişiklik yapılmadı)
 
   const getFileIcon = (fileName: string): string => {
     if (fileName.toLowerCase().includes('pdf')) return '📄';
